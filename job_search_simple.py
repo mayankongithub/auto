@@ -102,7 +102,7 @@ class JobSearcher:
         try:
             params = {
                 "engine": "google_jobs",
-                "q": f"{keyword} fresher India site:linkedin.com OR site:naukri.com OR site:instahyre.com",
+                "q": f"{keyword} India",
                 "api_key": SERPAPI_KEY
             }
 
@@ -112,9 +112,9 @@ class JobSearcher:
 
             jobs = []
             jobs_found = data.get("jobs_results", [])
-            print(f"  Found {len(jobs_found)} jobs for '{keyword}'")
+            print(f"  Found {len(jobs_found)} jobs, filtering...")
 
-            for job in jobs_found[:MAX_JOBS_PER_KEYWORD]:
+            for job in jobs_found[:15]:  # Check more jobs to get good ones after filtering
                 title = job.get("title", "")
                 description = job.get("description", "")
 
@@ -122,19 +122,32 @@ class JobSearcher:
                 if not self.is_fresher_job(title, description):
                     continue
 
-                # Extract best apply link
-                apply_link = self.extract_apply_link(job)
+                # Extract best apply link - prefer via links
+                apply_link = job.get("apply_link", "")
+                if not apply_link:
+                    apply_link = job.get("share_link", "")
+
+                # Try to find better links in related_links
+                related_links = job.get("related_links", [])
+                for link_obj in related_links:
+                    link = link_obj.get("link", "")
+                    # Prefer direct career page links
+                    if any(domain in link for domain in ["linkedin.com/jobs/view", "naukri.com/job", "instahyre.com", "indeed.com/viewjob", "careers.", "jobs."]):
+                        apply_link = link
+                        break
 
                 # Determine source from link
-                source = "Job Board"
-                if "linkedin.com" in apply_link:
+                source = "Career Page"
+                if "linkedin.com" in apply_link.lower():
                     source = "LinkedIn"
-                elif "naukri.com" in apply_link:
+                elif "naukri.com" in apply_link.lower():
                     source = "Naukri"
-                elif "instahyre.com" in apply_link:
+                elif "instahyre.com" in apply_link.lower():
                     source = "Instahyre"
-                elif "indeed.com" in apply_link:
+                elif "indeed.com" in apply_link.lower():
                     source = "Indeed"
+                elif "careers." in apply_link.lower() or "jobs." in apply_link.lower():
+                    source = "Company Career Page"
 
                 jobs.append({
                     "title": title,
@@ -146,6 +159,11 @@ class JobSearcher:
                     "posted_date": job.get("detected_extensions", {}).get("posted_at", "Recently posted")
                 })
 
+                # Stop after finding enough good jobs
+                if len(jobs) >= MAX_JOBS_PER_KEYWORD:
+                    break
+
+            print(f"  ✅ {len(jobs)} fresher jobs after filtering")
             return jobs
         except Exception as e:
             print(f"  Error: {str(e)}")
