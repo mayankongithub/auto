@@ -24,18 +24,28 @@ from config import (
     MAX_JOBS_PER_KEYWORD, RESULTS_FILENAME_TEMPLATE
 )
 
-# Major companies with direct career pages in India
-COMPANIES_INDIA = [
-    {"name": "Google", "careers_url": "https://www.google.com/about/careers/applications/jobs/results/", "api": "google"},
-    {"name": "Microsoft", "careers_url": "https://careers.microsoft.com/professionals/us/en/search-results", "location": "India"},
-    {"name": "Amazon", "careers_url": "https://www.amazon.jobs/en/search.json", "location": "India"},
-    {"name": "Flipkart", "careers_url": "https://www.flipkartcareers.com/", "location": "India"},
-    {"name": "Swiggy", "careers_url": "https://careers.swiggy.com/", "location": "India"},
-    {"name": "Zomato", "careers_url": "https://www.zomato.com/careers", "location": "India"},
-    {"name": "Paytm", "careers_url": "https://paytm.com/careers", "location": "India"},
-    {"name": "PhonePe", "careers_url": "https://www.phonepe.com/careers/", "location": "India"},
-    {"name": "Razorpay", "careers_url": "https://razorpay.com/jobs/", "location": "India"},
-    {"name": "CRED", "careers_url": "https://careers.cred.club/", "location": "India"},
+# Top tech companies in India with career pages
+TOP_COMPANIES_INDIA = [
+    # FAANG & Big Tech
+    "Google", "Microsoft", "Amazon", "Meta", "Apple",
+    # Indian Tech Giants
+    "Flipkart", "Swiggy", "Zomato", "Paytm", "PhonePe", "Razorpay", "CRED",
+    "Ola", "Uber", "Dunzo", "Zepto", "Meesho", "Myntra", "Nykaa",
+    # Fintech
+    "BharatPe", "PolicyBazaar", "Groww", "Upstox", "Sharechat", "MobiKwik",
+    # Edtech & SaaS
+    "BYJU'S", "Unacademy", "Vedantu", "upGrad", "Freshworks", "Zoho", "Postman",
+    # Product Companies
+    "Adobe", "Atlassian", "Salesforce", "Oracle", "SAP", "VMware", "Intuit",
+    "Intel", "NVIDIA", "Qualcomm", "Cisco", "Dell", "HP",
+    # Consulting & Services
+    "Accenture", "TCS", "Infosys", "Wipro", "HCL", "Tech Mahindra", "Capgemini",
+    # E-commerce & Delivery
+    "Snapdeal", "Licious", "BigBasket", "Urban Company", "Cure.fit",
+    # Gaming & Entertainment
+    "Dream11", "MPL", "Hike", "ShareChat", "Glance",
+    # Emerging Startups
+    "Udaan", "Zetwerk", "ApnaKlub", "CARS24", "Delhivery", "BlackBuck"
 ]
 
 # Job keywords for fresher/entry-level
@@ -92,6 +102,67 @@ class JobSearcher:
             return False
 
         return True  # Include by default if no exclusions
+
+    def search_company_careers(self, company_name: str) -> List[Dict]:
+        """Search specific company career pages for fresher jobs"""
+        if not SERPAPI_KEY:
+            return []
+
+        try:
+            # Search for company career page jobs
+            params = {
+                "engine": "google_jobs",
+                "q": f"{company_name} fresher software engineer India",
+                "api_key": SERPAPI_KEY
+            }
+
+            response = requests.get(SERPAPI_URL, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            jobs = []
+            jobs_found = data.get("jobs_results", [])
+
+            for job in jobs_found[:5]:  # Top 5 from each company
+                # Only include jobs from the actual company
+                company = job.get("company_name", "")
+                if company_name.lower() not in company.lower():
+                    continue
+
+                title = job.get("title", "")
+                description = job.get("description", "")
+
+                # Filter for fresher jobs
+                if not self.is_fresher_job(title, description):
+                    continue
+
+                # Extract best apply link
+                apply_link = job.get("apply_link", "")
+                if not apply_link:
+                    apply_link = job.get("share_link", "")
+
+                # Try to find company career page link
+                related_links = job.get("related_links", [])
+                for link_obj in related_links:
+                    link = link_obj.get("link", "")
+                    # Prefer company career pages
+                    if any(domain in link.lower() for domain in ["careers.", "jobs.", company_name.lower()]):
+                        apply_link = link
+                        break
+
+                jobs.append({
+                    "title": title,
+                    "company": company,
+                    "location": job.get("location", ""),
+                    "description": description[:500],
+                    "link": apply_link,
+                    "source": f"{company_name} Careers",
+                    "posted_date": job.get("detected_extensions", {}).get("posted_at", "Recently posted")
+                })
+
+            return jobs
+        except Exception as e:
+            return []
 
     def search_google_jobs_filtered(self, keyword: str) -> List[Dict]:
         """Search Google Jobs with better filtering for direct links"""
@@ -170,25 +241,53 @@ class JobSearcher:
             return []
     
     def search_all_keywords(self) -> List[Dict]:
-        """Search all keywords with focus on direct career page links"""
+        """Search keywords AND top company career pages"""
         all_jobs = []
 
-        # Focus on most relevant keywords for freshers
+        # Part 1: Search by keywords
+        print("\n🔍 PART 1: Keyword-based Job Search")
+        print("=" * 60)
         fresher_keywords = [
             "Software Engineer Fresher",
             "Backend Developer Entry Level",
             "C++ Developer Junior",
             "Node.js Developer Fresher",
             "Full Stack Developer Graduate",
-            "SDE 1",
-            "Associate Software Engineer"
+            "SDE 1"
         ]
 
         for keyword in fresher_keywords:
-            print(f"\nSearching for: {keyword}")
+            print(f"\nSearching: {keyword}")
             jobs = self.search_google_jobs_filtered(keyword)
             all_jobs.extend(jobs)
             time.sleep(RATE_LIMIT_BETWEEN_SEARCHES)
+
+        print(f"\n✅ Found {len(all_jobs)} jobs from keyword search")
+
+        # Part 2: Search top company career pages
+        print("\n🏢 PART 2: Top Company Career Pages")
+        print("=" * 60)
+
+        # Select top priority companies (limit to avoid too many API calls)
+        priority_companies = [
+            "Google", "Microsoft", "Amazon", "Meta", "Adobe",
+            "Flipkart", "Swiggy", "Zomato", "Razorpay", "CRED",
+            "Freshworks", "Zoho", "Postman", "Atlassian", "Oracle",
+            "TCS", "Infosys", "Wipro", "Accenture", "Capgemini"
+        ]
+
+        company_jobs_count = 0
+        for company in priority_companies[:10]:  # Check top 10 companies
+            print(f"\nChecking {company} careers...")
+            company_jobs = self.search_company_careers(company)
+            if company_jobs:
+                print(f"  ✅ Found {len(company_jobs)} fresher jobs")
+                all_jobs.extend(company_jobs)
+                company_jobs_count += len(company_jobs)
+            time.sleep(RATE_LIMIT_BETWEEN_SEARCHES)
+
+        print(f"\n✅ Found {company_jobs_count} jobs from company career pages")
+        print(f"📊 Total: {len(all_jobs)} jobs before deduplication")
 
         # Remove duplicates based on title and company
         unique_jobs = []
@@ -199,9 +298,13 @@ class JobSearcher:
                 seen.add(key)
                 unique_jobs.append(job)
 
-        # Sort by source priority (LinkedIn > Naukri > Instahyre > Others)
-        source_priority = {"LinkedIn": 0, "Naukri": 1, "Instahyre": 2, "Indeed": 3, "Job Board": 4}
-        unique_jobs.sort(key=lambda x: source_priority.get(x['source'], 5))
+        # Sort by source priority
+        source_priority = {
+            "LinkedIn": 0, "Naukri": 1, "Instahyre": 2,
+            "Google Careers": 3, "Microsoft Careers": 4, "Amazon Careers": 5,
+            "Company Career Page": 6, "Indeed": 7, "Career Page": 8
+        }
+        unique_jobs.sort(key=lambda x: source_priority.get(x['source'], 10))
 
         return unique_jobs
 
