@@ -48,17 +48,61 @@ class JobSearcher:
     def __init__(self):
         self.jobs = []
 
-    def search_linkedin_jobs(self, keyword: str) -> List[Dict]:
-        """Search LinkedIn Jobs using SerpAPI"""
+    def extract_apply_link(self, job: Dict) -> str:
+        """Extract the actual apply link from job data"""
+        # Try to get apply link from extensions
+        extensions = job.get("detected_extensions", {})
+        if "apply_link" in extensions:
+            return extensions["apply_link"]
+
+        # Try related links for company career page
+        related_links = job.get("related_links", [])
+        for link in related_links:
+            if any(keyword in link.get("link", "").lower() for keyword in ["career", "jobs", "apply", "linkedin.com/jobs", "naukri.com", "instahyre"]):
+                return link.get("link", "")
+
+        # Fallback to share link
+        return job.get("share_link", job.get("apply_link", ""))
+
+    def is_fresher_job(self, title: str, description: str) -> bool:
+        """Check if job is suitable for freshers"""
+        title_lower = title.lower()
+        desc_lower = description[:400].lower()
+
+        # Exclude senior positions
+        senior_keywords = ["senior", "lead", "manager", "architect", "principal", "staff", "sr.", "sr ",
+                          "5+ years", "6+ years", "7+ years", "8+ years", "10+ years",
+                          "experienced", "expert", "specialist"]
+
+        # Look for fresher indicators
+        fresher_keywords = ["fresher", "entry level", "entry-level", "junior", "graduate",
+                           "0-1 year", "0-2 year", "trainee", "intern", "sde 1", "sde-1",
+                           "sde i", "associate", "campus", "recent graduate"]
+
+        # Strong exclusion if title has senior keywords
+        if any(kw in title_lower for kw in senior_keywords):
+            return False
+
+        # Include if fresher keywords present
+        if any(kw in title_lower or kw in desc_lower for kw in fresher_keywords):
+            return True
+
+        # Exclude if description mentions years of experience
+        if any(kw in desc_lower for kw in ["5+ years", "6+ years", "7+ years", "experience required", "years of experience"]):
+            return False
+
+        return True  # Include by default if no exclusions
+
+    def search_google_jobs_filtered(self, keyword: str) -> List[Dict]:
+        """Search Google Jobs with better filtering for direct links"""
         if not SERPAPI_KEY:
             print("Warning: SERPAPI_KEY not set")
             return []
 
         try:
             params = {
-                "engine": "linkedin_jobs",
-                "q": f"{keyword}",
-                "location": "India",
+                "engine": "google_jobs",
+                "q": f"{keyword} fresher India site:linkedin.com OR site:naukri.com OR site:instahyre.com",
                 "api_key": SERPAPI_KEY
             }
 
@@ -68,111 +112,64 @@ class JobSearcher:
 
             jobs = []
             jobs_found = data.get("jobs_results", [])
-            print(f"  LinkedIn: Found {len(jobs_found)} jobs for '{keyword}'")
+            print(f"  Found {len(jobs_found)} jobs for '{keyword}'")
 
-            for job in jobs_found[:5]:  # Get top 5 from LinkedIn
-                title = job.get("title", "").lower()
-                description = job.get("description", "").lower()
+            for job in jobs_found[:MAX_JOBS_PER_KEYWORD]:
+                title = job.get("title", "")
+                description = job.get("description", "")
 
-                # Filter for fresher/entry-level
-                senior_keywords = ["senior", "lead", "manager", "architect", "principal", "staff", "sr.", "sr ", "5+ years", "6+ years", "7+ years", "8+ years"]
-                fresher_keywords = ["fresher", "entry level", "entry-level", "junior", "graduate", "0-1 year", "0-2 year", "trainee", "intern", "sde 1", "sde-1", "sde i"]
+                # Filter for fresher jobs
+                if not self.is_fresher_job(title, description):
+                    continue
 
-                is_senior = any(kw in title or kw in description[:300] for kw in senior_keywords)
-                is_fresher = any(kw in title or kw in description[:300] for kw in fresher_keywords)
+                # Extract best apply link
+                apply_link = self.extract_apply_link(job)
 
-                if not is_senior or is_fresher:
-                    # Extract job ID and create direct LinkedIn link
-                    job_id = job.get("job_id", "")
-                    direct_link = f"https://www.linkedin.com/jobs/view/{job_id}" if job_id else job.get("link", "")
+                # Determine source from link
+                source = "Job Board"
+                if "linkedin.com" in apply_link:
+                    source = "LinkedIn"
+                elif "naukri.com" in apply_link:
+                    source = "Naukri"
+                elif "instahyre.com" in apply_link:
+                    source = "Instahyre"
+                elif "indeed.com" in apply_link:
+                    source = "Indeed"
 
-                    jobs.append({
-                        "title": job.get("title", ""),
-                        "company": job.get("company_name", ""),
-                        "location": job.get("location", ""),
-                        "description": job.get("description", "")[:500],
-                        "link": direct_link,
-                        "source": "LinkedIn",
-                        "posted_date": job.get("detected_extensions", {}).get("posted_at", "Recently")
-                    })
-
-            return jobs
-        except Exception as e:
-            print(f"  LinkedIn Error: {str(e)}")
-            return []
-
-    def search_indeed_jobs(self, keyword: str) -> List[Dict]:
-        """Search Indeed Jobs using SerpAPI"""
-        if not SERPAPI_KEY:
-            return []
-
-        try:
-            params = {
-                "engine": "indeed_jobs",
-                "q": f"{keyword} fresher",
-                "location": "India",
-                "api_key": SERPAPI_KEY
-            }
-
-            response = requests.get(SERPAPI_URL, params=params, timeout=30)
-            response.raise_for_status()
-            data = response.json()
-
-            jobs = []
-            jobs_found = data.get("jobs_results", [])
-            print(f"  Indeed: Found {len(jobs_found)} jobs for '{keyword}'")
-
-            for job in jobs_found[:5]:  # Get top 5 from Indeed
-                title = job.get("title", "").lower()
-                description = job.get("description", "").lower()
-
-                # Filter for fresher/entry-level
-                senior_keywords = ["senior", "lead", "manager", "architect", "principal", "staff", "sr.", "sr ", "5+ years", "6+ years", "7+ years"]
-                is_senior = any(kw in title for kw in senior_keywords)
-
-                if not is_senior:
-                    # Get direct Indeed link
-                    direct_link = job.get("link", "")
-
-                    jobs.append({
-                        "title": job.get("title", ""),
-                        "company": job.get("company_name", ""),
-                        "location": job.get("location", ""),
-                        "description": job.get("description", "")[:500],
-                        "link": direct_link,
-                        "source": "Indeed",
-                        "posted_date": job.get("detected_extensions", {}).get("posted_at", "Recently")
-                    })
+                jobs.append({
+                    "title": title,
+                    "company": job.get("company_name", ""),
+                    "location": job.get("location", ""),
+                    "description": description[:500],
+                    "link": apply_link,
+                    "source": source,
+                    "posted_date": job.get("detected_extensions", {}).get("posted_at", "Recently posted")
+                })
 
             return jobs
         except Exception as e:
-            print(f"  Indeed Error: {str(e)}")
+            print(f"  Error: {str(e)}")
             return []
     
     def search_all_keywords(self) -> List[Dict]:
-        """Search all keywords across LinkedIn and Indeed"""
+        """Search all keywords with focus on direct career page links"""
         all_jobs = []
 
         # Focus on most relevant keywords for freshers
         fresher_keywords = [
             "Software Engineer Fresher",
             "Backend Developer Entry Level",
-            "C++ Developer Fresher",
-            "Node.js Developer Junior",
-            "Full Stack Developer Graduate"
+            "C++ Developer Junior",
+            "Node.js Developer Fresher",
+            "Full Stack Developer Graduate",
+            "SDE 1",
+            "Associate Software Engineer"
         ]
 
         for keyword in fresher_keywords:
             print(f"\nSearching for: {keyword}")
-
-            # Search LinkedIn
-            linkedin_jobs = self.search_linkedin_jobs(keyword)
-            all_jobs.extend(linkedin_jobs)
-            time.sleep(1)
-
-            # Search Indeed
-            indeed_jobs = self.search_indeed_jobs(keyword)
-            all_jobs.extend(indeed_jobs)
+            jobs = self.search_google_jobs_filtered(keyword)
+            all_jobs.extend(jobs)
             time.sleep(RATE_LIMIT_BETWEEN_SEARCHES)
 
         # Remove duplicates based on title and company
@@ -184,8 +181,9 @@ class JobSearcher:
                 seen.add(key)
                 unique_jobs.append(job)
 
-        # Sort by source priority (LinkedIn first, then Indeed)
-        unique_jobs.sort(key=lambda x: (x['source'] != 'LinkedIn', x.get('posted_date', '')), reverse=False)
+        # Sort by source priority (LinkedIn > Naukri > Instahyre > Others)
+        source_priority = {"LinkedIn": 0, "Naukri": 1, "Instahyre": 2, "Indeed": 3, "Job Board": 4}
+        unique_jobs.sort(key=lambda x: source_priority.get(x['source'], 5))
 
         return unique_jobs
 
