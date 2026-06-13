@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Direct Career Page Job Search Automation
-Searches company career pages for active job postings
+Direct Company Career Page Job Search
+ONLY gets jobs from official company career portals
 """
 
 import json
@@ -20,8 +20,7 @@ load_dotenv()
 
 from config import (
     SERPAPI_KEY, RECIPIENT_EMAIL, SENDER_EMAIL, SENDER_PASSWORD,
-    KEYWORDS, SERPAPI_URL, RATE_LIMIT_BETWEEN_SEARCHES,
-    MAX_JOBS_PER_KEYWORD, RESULTS_FILENAME_TEMPLATE
+    SERPAPI_URL, RATE_LIMIT_BETWEEN_SEARCHES, RESULTS_FILENAME_TEMPLATE
 )
 
 # Top tech companies in India with career pages
@@ -53,10 +52,52 @@ FRESHER_KEYWORDS = ["fresher", "entry level", "junior", "graduate", "trainee", "
 
 
 class JobSearcher:
-    """Handles job searching from career pages"""
+    """Handles job searching from company career pages ONLY"""
 
     def __init__(self):
         self.jobs = []
+
+    def get_amazon_jobs(self) -> List[Dict]:
+        """Get jobs DIRECTLY from Amazon careers API"""
+        try:
+            url = "https://www.amazon.jobs/en/search.json"
+            params = {
+                "offset": 0,
+                "result_limit": 20,
+                "sort": "recent",
+                "country[]": "IND",
+                "category[]": "software-development"
+            }
+
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            jobs = []
+            for job in data.get("jobs", []):
+                title = job.get("title", "").lower()
+
+                # Filter for entry-level (exclude senior/manager)
+                if any(kw in title for kw in ["senior", "sr.", "manager", "principal", "lead"]):
+                    continue
+
+                # Include entry-level keywords
+                if any(kw in title for kw in ["software development engineer", "sde", "software engineer"]):
+                    jobs.append({
+                        "title": job.get("title", ""),
+                        "company": "Amazon",
+                        "location": job.get("location", ""),
+                        "description": job.get("description_short", "")[:500],
+                        "link": f"https://www.amazon.jobs{job.get('job_path', '')}",
+                        "source": "Amazon Careers",
+                        "posted_date": job.get("posted_date", "Recently")
+                    })
+
+            print(f"  ✅ Amazon: {len(jobs)} jobs")
+            return jobs
+        except Exception as e:
+            print(f"  ❌ Amazon Error: {str(e)}")
+            return []
 
     def extract_apply_link(self, job: Dict) -> str:
         """Extract the actual apply link from job data"""
@@ -102,6 +143,77 @@ class JobSearcher:
             return False
 
         return True  # Include by default if no exclusions
+
+    def search_company_direct_careers(self, company_name: str) -> List[Dict]:
+        """Search for jobs but ONLY accept direct company career page links"""
+        if not SERPAPI_KEY:
+            return []
+
+        try:
+            params = {
+                "engine": "google_jobs",
+                "q": f"{company_name} software engineer fresher India",
+                "api_key": SERPAPI_KEY
+            }
+
+            response = requests.get(SERPAPI_URL, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            jobs = []
+            for job in data.get("jobs_results", [])[:10]:
+                # CRITICAL: Only accept jobs from company's actual career page
+                company = job.get("company_name", "")
+                if company_name.lower() not in company.lower():
+                    continue  # Skip if not from actual company
+
+                title = job.get("title", "")
+                description = job.get("description", "")
+
+                # Filter for fresher
+                if not self.is_fresher_job(title, description):
+                    continue
+
+                # Extract link - MUST be from company's career domain
+                link = job.get("apply_link", job.get("share_link", ""))
+
+                # Try to find company career page link in related_links
+                related_links = job.get("related_links", [])
+                company_career_link = None
+
+                for link_obj in related_links:
+                    url = link_obj.get("link", "").lower()
+                    # Accept ONLY if it's the company's official career domain
+                    if any(domain in url for domain in [
+                        f"{company_name.lower()}.com/careers",
+                        f"{company_name.lower()}.com/jobs",
+                        f"careers.{company_name.lower()}.com",
+                        f"jobs.{company_name.lower()}.com",
+                        "amazon.jobs", "careers.microsoft.com", "careers.google.com",
+                        "flipkartcareers.com", "careers.swiggy.com"
+                    ]):
+                        company_career_link = link_obj.get("link", "")
+                        break
+
+                # ONLY include if we found a direct company career page link
+                if not company_career_link:
+                    continue  # Skip third-party job board links
+
+                jobs.append({
+                    "title": title,
+                    "company": company,
+                    "location": job.get("location", ""),
+                    "description": description[:500],
+                    "link": company_career_link,  # Use direct career page link only
+                    "source": f"{company_name} Careers",
+                    "posted_date": job.get("detected_extensions", {}).get("posted_at", "Recently")
+                })
+
+            if jobs:
+                print(f"  ✅ {company_name}: {len(jobs)} direct career page jobs")
+            return jobs
+        except Exception as e:
+            return []
 
     def search_company_careers(self, company_name: str) -> List[Dict]:
         """Search specific company career pages for fresher jobs"""
@@ -241,70 +353,45 @@ class JobSearcher:
             return []
     
     def search_all_keywords(self) -> List[Dict]:
-        """Search keywords AND top company career pages"""
+        """Search ONLY direct company career pages"""
         all_jobs = []
 
-        # Part 1: Search by keywords
-        print("\n🔍 PART 1: Keyword-based Job Search")
+        print("\n🏢 DIRECT COMPANY CAREER PAGE SEARCH")
         print("=" * 60)
-        fresher_keywords = [
-            "Software Engineer Fresher",
-            "Backend Developer Entry Level",
-            "C++ Developer Junior",
-            "Node.js Developer Fresher",
-            "Full Stack Developer Graduate",
-            "SDE 1"
+        print("🎯 Getting jobs ONLY from official company portals")
+        print("✅ NO third-party job boards or aggregators\n")
+
+        # Part 1: Amazon direct API
+        print("\n[1/11] Amazon (Direct API)...")
+        all_jobs.extend(self.get_amazon_jobs())
+        time.sleep(RATE_LIMIT_BETWEEN_SEARCHES)
+
+        # Part 2: Top companies with direct career page filtering
+        top_companies = [
+            "Microsoft", "Google", "Meta", "Adobe", "Atlassian",
+            "Flipkart", "Swiggy", "Zomato", "Razorpay", "CRED"
         ]
 
-        for keyword in fresher_keywords:
-            print(f"\nSearching: {keyword}")
-            jobs = self.search_google_jobs_filtered(keyword)
-            all_jobs.extend(jobs)
+        for i, company in enumerate(top_companies, 2):
+            print(f"\n[{i}/11] {company} (Career Page Only)...")
+            company_jobs = self.search_company_direct_careers(company)
+            all_jobs.extend(company_jobs)
             time.sleep(RATE_LIMIT_BETWEEN_SEARCHES)
 
-        print(f"\n✅ Found {len(all_jobs)} jobs from keyword search")
+        print(f"\n" + "=" * 60)
+        print(f"📊 Total jobs found: {len(all_jobs)}")
 
-        # Part 2: Search top company career pages
-        print("\n🏢 PART 2: Top Company Career Pages")
-        print("=" * 60)
-
-        # Select top priority companies (limit to avoid too many API calls)
-        priority_companies = [
-            "Google", "Microsoft", "Amazon", "Meta", "Adobe",
-            "Flipkart", "Swiggy", "Zomato", "Razorpay", "CRED",
-            "Freshworks", "Zoho", "Postman", "Atlassian", "Oracle",
-            "TCS", "Infosys", "Wipro", "Accenture", "Capgemini"
-        ]
-
-        company_jobs_count = 0
-        for company in priority_companies[:10]:  # Check top 10 companies
-            print(f"\nChecking {company} careers...")
-            company_jobs = self.search_company_careers(company)
-            if company_jobs:
-                print(f"  ✅ Found {len(company_jobs)} fresher jobs")
-                all_jobs.extend(company_jobs)
-                company_jobs_count += len(company_jobs)
-            time.sleep(RATE_LIMIT_BETWEEN_SEARCHES)
-
-        print(f"\n✅ Found {company_jobs_count} jobs from company career pages")
-        print(f"📊 Total: {len(all_jobs)} jobs before deduplication")
-
-        # Remove duplicates based on title and company
+        # Remove duplicates
         unique_jobs = []
         seen = set()
         for job in all_jobs:
             key = (job['title'].lower().strip(), job['company'].lower().strip())
-            if key not in seen and job.get('link'):  # Only include jobs with valid links
+            if key not in seen and job.get('link'):
                 seen.add(key)
                 unique_jobs.append(job)
 
-        # Sort by source priority
-        source_priority = {
-            "LinkedIn": 0, "Naukri": 1, "Instahyre": 2,
-            "Google Careers": 3, "Microsoft Careers": 4, "Amazon Careers": 5,
-            "Company Career Page": 6, "Indeed": 7, "Career Page": 8
-        }
-        unique_jobs.sort(key=lambda x: source_priority.get(x['source'], 10))
+        print(f"✅ Unique jobs after deduplication: {len(unique_jobs)}")
+        print("=" * 60)
 
         return unique_jobs
 

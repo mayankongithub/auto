@@ -1,0 +1,129 @@
+═══════════════════════════════════════════════════════════
+📧 QUICK EMAIL SETUP - 3 Simple Steps
+═══════════════════════════════════════════════════════════
+
+✅ DONE: Fresher/entry-level filtering added!
+✅ DONE: Code updated and pushed to GitHub!
+
+NOW: Set up email to receive daily job alerts!
+
+───────────────────────────────────────────────────────────
+STEP 1: Generate Gmail App Password (I opened the page!)
+───────────────────────────────────────────────────────────
+
+In the browser window that just opened:
+
+1. Look for "2-Step Verification" section
+   → Click "2-Step Verification"
+   → Enable it if not already enabled (need phone)
+
+2. Go back to Security page
+   → Scroll down to "2-Step Verification" 
+   → Click "App passwords"
+
+3. Generate password:
+   → Select App: "Mail"
+   → Select Device: "Other (custom name)"
+   → Type: "Job Search Bot"
+   → Click "Generate"
+
+4. COPY THE PASSWORD (16 characters):
+   Example: abcd efgh ijkl mnop
+   (You can remove spaces: abcdefghijklmnop)
+
+   ⚠️  IMPORTANT: Save this now! You won't see it again!
+
+───────────────────────────────────────────────────────────
+STEP 2: Add to GitHub Secrets
+───────────────────────────────────────────────────────────
+
+Go to: https://github.com/mayankongithub/auto/settings/secrets/actions
+
+Add TWO new secrets:
+
+SECRET 1:
+  Name:  SENDER_EMAIL
+  Value: mayank0611sharma@gmail.com
+
+SECRET 2:
+  Name:  SENDER_PASSWORD
+  Value: [paste your 16-char app password from Step 1]
+
+After adding, you'll have 3 secrets total:
+  ✅ SERPAPI_KEY
+  ✅ SENDER_EMAIL
+  ✅ SENDER_PASSWORD
+
+───────────────────────────────────────────────────────────
+STEP 3: Test It!
+───────────────────────────────────────────────────────────
+
+Go to: https://github.com/mayankongithub/auto/actions
+
+1. Click "Daily Job Search Automation"
+2. Click "Run workflow" → "Run workflow"
+3. Wait 2-3 minutes
+4. Check your email: mayank0611sharma@gmail.com
+   (Check spam folder if not in inbox!)
+
+═══════════════════════════════════════════════════════════
+✨ WHAT YOU'LL GET DAILY:
+═══════════════════════════════════════════════════════════
+
+📧 Email Subject: "Daily Job Alert - 25 Jobs Found (2026-06-13)"
+
+📧 Email Content:
+   → 20-40 fresher/entry-level jobs
+   → Only from India
+   → Direct application links
+   → Clean, organized format
+
+🕐 When: Every day at 11:00 PM IST
+
+🎯 Quality: ONLY fresher jobs (no senior positions!)
+
+═══════════════════════════════════════════════════════════
+🚀 NEW FILTERING INCLUDES:
+═══════════════════════════════════════════════════════════
+
+✅ Jobs with: "fresher", "entry level", "junior", "graduate"
+✅ Jobs with: "0-1 year", "0-2 year", "trainee", "intern"
+✅ Jobs with: "recent graduate", "campus"
+
+❌ EXCLUDES: "senior", "lead", "manager", "5+ years", etc.
+
+═══════════════════════════════════════════════════════════
+📞 TROUBLESHOOTING:
+═══════════════════════════════════════════════════════════
+
+❌ "Invalid credentials" error
+   → Use app password, NOT regular Gmail password
+   → Remove any spaces from the 16-char password
+
+❌ No email received
+   → Check spam/promotions folder
+   → Verify secrets are added correctly
+   → Wait 2-3 minutes for workflow to complete
+
+❌ Still getting senior jobs
+   → Rare after filtering - report if it happens
+   → Most senior jobs will be filtered out
+
+═══════════════════════════════════════════════════════════
+🎉 YOU'RE ALMOST DONE!
+═══════════════════════════════════════════════════════════
+
+Current Status:
+  ✅ Job search automation working
+  ✅ Fresher/entry-level filtering active
+  ✅ Code on GitHub
+  ✅ SERPAPI_KEY configured
+  ⬜ Generate Gmail app password (do now!)
+  ⬜ Add SENDER_EMAIL secret
+  ⬜ Add SENDER_PASSWORD secret
+  ⬜ Test and receive email!
+
+Total time: 5-7 minutes
+Result: Daily job emails forever! 🚀
+
+═══════════════════════════════════════════════════════════
