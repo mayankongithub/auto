@@ -35,32 +35,46 @@ class JobSearcher:
         if not SERPAPI_KEY:
             print("Warning: SERPAPI_KEY not set")
             return []
-        
+
         try:
             params = {
                 "engine": "google_jobs",
-                "q": f"{keyword} India",
+                "q": f"{keyword} fresher entry level India",
                 "api_key": SERPAPI_KEY
             }
-            
+
             response = requests.get(SERPAPI_URL, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
-            
+
             jobs = []
             jobs_found = data.get("jobs_results", [])
             print(f"  Found {len(jobs_found)} jobs for '{keyword}'")
-            
+
             for job in jobs_found[:MAX_JOBS_PER_KEYWORD]:
-                jobs.append({
-                    "title": job.get("title", ""),
-                    "company": job.get("company_name", ""),
-                    "location": job.get("location", ""),
-                    "description": job.get("description", "")[:500],
-                    "link": job.get("share_link", job.get("apply_link", "")),
-                    "source": "Google Jobs"
-                })
-            
+                # Get job details
+                title = job.get("title", "").lower()
+                description = job.get("description", "").lower()
+
+                # Filter for fresher/entry-level jobs only
+                senior_keywords = ["senior", "lead", "manager", "architect", "principal", "staff", "sr.", "sr ", "5+ years", "6+ years", "7+ years", "8+ years", "experience required"]
+                fresher_keywords = ["fresher", "entry level", "entry-level", "junior", "graduate", "0-1 year", "0-2 year", "trainee", "intern", "recent graduate", "campus"]
+
+                # Skip if job title/description contains senior keywords
+                is_senior = any(keyword in title or keyword in description[:300] for keyword in senior_keywords)
+                is_fresher = any(keyword in title or keyword in description[:300] for keyword in fresher_keywords)
+
+                # Only include if it's fresher OR doesn't mention senior (and is entry-level focused)
+                if not is_senior or is_fresher:
+                    jobs.append({
+                        "title": job.get("title", ""),
+                        "company": job.get("company_name", ""),
+                        "location": job.get("location", ""),
+                        "description": job.get("description", "")[:500],
+                        "link": job.get("share_link", job.get("apply_link", "")),
+                        "source": "Google Jobs"
+                    })
+
             return jobs
         except Exception as e:
             print(f"Error searching for '{keyword}': {str(e)}")
@@ -161,6 +175,9 @@ def main():
         notifier.send_email(RECIPIENT_EMAIL, jobs)
     else:
         print("⚠️  Email credentials not set. Results saved to file only.")
+        print("📧 To enable email:")
+        print("   1. Generate Gmail App Password at https://myaccount.google.com/security")
+        print("   2. Add GitHub Secrets: SENDER_EMAIL and SENDER_PASSWORD")
     
     print("\n[3/3] Saving results...")
     output_file = RESULTS_FILENAME_TEMPLATE.format(date=datetime.now().strftime('%Y%m%d'))
