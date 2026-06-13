@@ -57,15 +57,36 @@ class JobSearcher:
     def __init__(self):
         self.jobs = []
 
+    def is_india_location(self, location: str) -> bool:
+        """Check if location is in India"""
+        if not location:
+            return False
+
+        location_lower = location.lower()
+
+        # Indian cities and states
+        india_locations = [
+            "india", "bangalore", "bengaluru", "hyderabad", "pune", "mumbai",
+            "delhi", "gurgaon", "gurugram", "noida", "chennai", "kolkata",
+            "ahmedabad", "jaipur", "kochi", "trivandrum", "chandigarh",
+            "indore", "bhopal", "lucknow", "kanpur", "nagpur", "visakhapatnam",
+            "coimbatore", "mysore", "madurai", "karnataka", "maharashtra",
+            "tamil nadu", "telangana", "kerala", "gujarat", "rajasthan",
+            "west bengal", "uttar pradesh", "haryana", "ncr"
+        ]
+
+        # Check if location contains any Indian city/state
+        return any(ind_loc in location_lower for ind_loc in india_locations)
+
     def get_amazon_jobs(self) -> List[Dict]:
-        """Get jobs DIRECTLY from Amazon careers API"""
+        """Get jobs DIRECTLY from Amazon careers API - INDIA ONLY"""
         try:
             url = "https://www.amazon.jobs/en/search.json"
             params = {
                 "offset": 0,
                 "result_limit": 20,
                 "sort": "recent",
-                "country[]": "IND",
+                "country[]": "IND",  # India country code
                 "category[]": "software-development"
             }
 
@@ -75,6 +96,12 @@ class JobSearcher:
 
             jobs = []
             for job in data.get("jobs", []):
+                location = job.get("location", "")
+
+                # STRICT: Must be India location
+                if not self.is_india_location(location):
+                    continue
+
                 title = job.get("title", "").lower()
 
                 # Filter for entry-level (exclude senior/manager)
@@ -86,14 +113,14 @@ class JobSearcher:
                     jobs.append({
                         "title": job.get("title", ""),
                         "company": "Amazon",
-                        "location": job.get("location", ""),
+                        "location": location,
                         "description": job.get("description_short", "")[:500],
                         "link": f"https://www.amazon.jobs{job.get('job_path', '')}",
                         "source": "Amazon Careers",
                         "posted_date": job.get("posted_date", "Recently")
                     })
 
-            print(f"  ✅ Amazon: {len(jobs)} jobs")
+            print(f"  ✅ Amazon India: {len(jobs)} jobs")
             return jobs
         except Exception as e:
             print(f"  ❌ Amazon Error: {str(e)}")
@@ -145,7 +172,7 @@ class JobSearcher:
         return True  # Include by default if no exclusions
 
     def search_company_direct_careers(self, company_name: str) -> List[Dict]:
-        """Search for jobs but ONLY accept direct company career page links"""
+        """Search for jobs but ONLY accept direct company career page links - INDIA ONLY"""
         if not SERPAPI_KEY:
             return []
 
@@ -153,6 +180,7 @@ class JobSearcher:
             params = {
                 "engine": "google_jobs",
                 "q": f"{company_name} software engineer fresher India",
+                "location": "India",  # Force India location
                 "api_key": SERPAPI_KEY
             }
 
@@ -166,6 +194,11 @@ class JobSearcher:
                 company = job.get("company_name", "")
                 if company_name.lower() not in company.lower():
                     continue  # Skip if not from actual company
+
+                # STRICT: Must be India location
+                location = job.get("location", "")
+                if not self.is_india_location(location):
+                    continue  # Skip non-India locations
 
                 title = job.get("title", "")
                 description = job.get("description", "")
@@ -190,7 +223,8 @@ class JobSearcher:
                         f"careers.{company_name.lower()}.com",
                         f"jobs.{company_name.lower()}.com",
                         "amazon.jobs", "careers.microsoft.com", "careers.google.com",
-                        "flipkartcareers.com", "careers.swiggy.com"
+                        "flipkartcareers.com", "careers.swiggy.com", "careers.zomato.com",
+                        "razorpay.com/jobs", "careers.cred.club"
                     ]):
                         company_career_link = link_obj.get("link", "")
                         break
@@ -202,7 +236,7 @@ class JobSearcher:
                 jobs.append({
                     "title": title,
                     "company": company,
-                    "location": job.get("location", ""),
+                    "location": location,
                     "description": description[:500],
                     "link": company_career_link,  # Use direct career page link only
                     "source": f"{company_name} Careers",
@@ -210,7 +244,7 @@ class JobSearcher:
                 })
 
             if jobs:
-                print(f"  ✅ {company_name}: {len(jobs)} direct career page jobs")
+                print(f"  ✅ {company_name} India: {len(jobs)} direct career page jobs")
             return jobs
         except Exception as e:
             return []
@@ -432,13 +466,15 @@ class EmailNotifier:
                 <h2 style="color: #2c3e50;">🎯 Daily Job Search Results for Mayank Sharma</h2>
                 <p><strong>📅 Date:</strong> {datetime.now().strftime("%B %d, %Y")}</p>
                 <p><strong>📊 Total Active Jobs:</strong> {len(jobs)} fresher/entry-level positions</p>
-                <p style="background-color: #e8f5e9; padding: 10px; border-left: 4px solid #4caf50; margin: 15px 0;">
-                    ✅ <strong>Filtered for:</strong> Fresher, Entry-level, 0-1 year experience<br>
-                    ✅ <strong>Sources:</strong> LinkedIn, Indeed (Direct career page links)<br>
-                    ✅ <strong>Location:</strong> India only
+                <p style="background-color: #e3f2fd; padding: 15px; border-left: 4px solid #2196f3; margin: 15px 0;">
+                    🏢 <strong>Sources:</strong> ONLY direct company career pages<br>
+                    📍 <strong>Location:</strong> ONLY India (Bangalore, Hyderabad, Pune, etc.)<br>
+                    🎓 <strong>Experience:</strong> Fresher, Entry-level, 0-1 year only<br>
+                    ✅ <strong>Link Quality:</strong> amazon.jobs, careers.microsoft.com, etc.<br>
+                    ❌ <strong>Excluded:</strong> NO third-party job boards or aggregators
                 </p>
                 <hr style="border: 1px solid #ddd; margin: 20px 0;">{jobs_html}<hr style="border: 1px solid #ddd; margin: 20px 0;">
-                <p style="color: #7f8c8d; font-size: 12px; text-align: center;"><em>🤖 Automated daily job search • Direct career page links • Fresher-focused filtering</em></p>
+                <p style="color: #7f8c8d; font-size: 12px; text-align: center;"><em>🤖 Automated daily job search • ONLY official company career pages • India locations only • Fresher-focused filtering</em></p>
                 </body></html>"""
         return html
     
