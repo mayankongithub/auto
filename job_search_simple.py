@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Simple Job Search Automation (Without AI Filtering)
-Searches for relevant job postings and emails results
+Direct Career Page Job Search Automation
+Searches company career pages for active job postings
 """
 
 import json
@@ -13,6 +13,7 @@ import smtplib
 from typing import List, Dict
 import time
 from dotenv import load_dotenv
+import re
 
 # Load environment variables
 load_dotenv()
@@ -23,23 +24,41 @@ from config import (
     MAX_JOBS_PER_KEYWORD, RESULTS_FILENAME_TEMPLATE
 )
 
+# Major companies with direct career pages in India
+COMPANIES_INDIA = [
+    {"name": "Google", "careers_url": "https://www.google.com/about/careers/applications/jobs/results/", "api": "google"},
+    {"name": "Microsoft", "careers_url": "https://careers.microsoft.com/professionals/us/en/search-results", "location": "India"},
+    {"name": "Amazon", "careers_url": "https://www.amazon.jobs/en/search.json", "location": "India"},
+    {"name": "Flipkart", "careers_url": "https://www.flipkartcareers.com/", "location": "India"},
+    {"name": "Swiggy", "careers_url": "https://careers.swiggy.com/", "location": "India"},
+    {"name": "Zomato", "careers_url": "https://www.zomato.com/careers", "location": "India"},
+    {"name": "Paytm", "careers_url": "https://paytm.com/careers", "location": "India"},
+    {"name": "PhonePe", "careers_url": "https://www.phonepe.com/careers/", "location": "India"},
+    {"name": "Razorpay", "careers_url": "https://razorpay.com/jobs/", "location": "India"},
+    {"name": "CRED", "careers_url": "https://careers.cred.club/", "location": "India"},
+]
+
+# Job keywords for fresher/entry-level
+FRESHER_KEYWORDS = ["fresher", "entry level", "junior", "graduate", "trainee", "associate", "sde-1", "sde 1"]
+
 
 class JobSearcher:
-    """Handles job searching"""
-    
+    """Handles job searching from career pages"""
+
     def __init__(self):
         self.jobs = []
-    
-    def search_serpapi(self, keyword: str) -> List[Dict]:
-        """Search jobs using SerpAPI"""
+
+    def search_linkedin_jobs(self, keyword: str) -> List[Dict]:
+        """Search LinkedIn Jobs using SerpAPI"""
         if not SERPAPI_KEY:
             print("Warning: SERPAPI_KEY not set")
             return []
 
         try:
             params = {
-                "engine": "google_jobs",
-                "q": f"{keyword} fresher entry level India",
+                "engine": "linkedin_jobs",
+                "q": f"{keyword}",
+                "location": "India",
                 "api_key": SERPAPI_KEY
             }
 
@@ -49,56 +68,125 @@ class JobSearcher:
 
             jobs = []
             jobs_found = data.get("jobs_results", [])
-            print(f"  Found {len(jobs_found)} jobs for '{keyword}'")
+            print(f"  LinkedIn: Found {len(jobs_found)} jobs for '{keyword}'")
 
-            for job in jobs_found[:MAX_JOBS_PER_KEYWORD]:
-                # Get job details
+            for job in jobs_found[:5]:  # Get top 5 from LinkedIn
                 title = job.get("title", "").lower()
                 description = job.get("description", "").lower()
 
-                # Filter for fresher/entry-level jobs only
-                senior_keywords = ["senior", "lead", "manager", "architect", "principal", "staff", "sr.", "sr ", "5+ years", "6+ years", "7+ years", "8+ years", "experience required"]
-                fresher_keywords = ["fresher", "entry level", "entry-level", "junior", "graduate", "0-1 year", "0-2 year", "trainee", "intern", "recent graduate", "campus"]
+                # Filter for fresher/entry-level
+                senior_keywords = ["senior", "lead", "manager", "architect", "principal", "staff", "sr.", "sr ", "5+ years", "6+ years", "7+ years", "8+ years"]
+                fresher_keywords = ["fresher", "entry level", "entry-level", "junior", "graduate", "0-1 year", "0-2 year", "trainee", "intern", "sde 1", "sde-1", "sde i"]
 
-                # Skip if job title/description contains senior keywords
-                is_senior = any(keyword in title or keyword in description[:300] for keyword in senior_keywords)
-                is_fresher = any(keyword in title or keyword in description[:300] for keyword in fresher_keywords)
+                is_senior = any(kw in title or kw in description[:300] for kw in senior_keywords)
+                is_fresher = any(kw in title or kw in description[:300] for kw in fresher_keywords)
 
-                # Only include if it's fresher OR doesn't mention senior (and is entry-level focused)
                 if not is_senior or is_fresher:
+                    # Extract job ID and create direct LinkedIn link
+                    job_id = job.get("job_id", "")
+                    direct_link = f"https://www.linkedin.com/jobs/view/{job_id}" if job_id else job.get("link", "")
+
                     jobs.append({
                         "title": job.get("title", ""),
                         "company": job.get("company_name", ""),
                         "location": job.get("location", ""),
                         "description": job.get("description", "")[:500],
-                        "link": job.get("share_link", job.get("apply_link", "")),
-                        "source": "Google Jobs"
+                        "link": direct_link,
+                        "source": "LinkedIn",
+                        "posted_date": job.get("detected_extensions", {}).get("posted_at", "Recently")
                     })
 
             return jobs
         except Exception as e:
-            print(f"Error searching for '{keyword}': {str(e)}")
+            print(f"  LinkedIn Error: {str(e)}")
+            return []
+
+    def search_indeed_jobs(self, keyword: str) -> List[Dict]:
+        """Search Indeed Jobs using SerpAPI"""
+        if not SERPAPI_KEY:
+            return []
+
+        try:
+            params = {
+                "engine": "indeed_jobs",
+                "q": f"{keyword} fresher",
+                "location": "India",
+                "api_key": SERPAPI_KEY
+            }
+
+            response = requests.get(SERPAPI_URL, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            jobs = []
+            jobs_found = data.get("jobs_results", [])
+            print(f"  Indeed: Found {len(jobs_found)} jobs for '{keyword}'")
+
+            for job in jobs_found[:5]:  # Get top 5 from Indeed
+                title = job.get("title", "").lower()
+                description = job.get("description", "").lower()
+
+                # Filter for fresher/entry-level
+                senior_keywords = ["senior", "lead", "manager", "architect", "principal", "staff", "sr.", "sr ", "5+ years", "6+ years", "7+ years"]
+                is_senior = any(kw in title for kw in senior_keywords)
+
+                if not is_senior:
+                    # Get direct Indeed link
+                    direct_link = job.get("link", "")
+
+                    jobs.append({
+                        "title": job.get("title", ""),
+                        "company": job.get("company_name", ""),
+                        "location": job.get("location", ""),
+                        "description": job.get("description", "")[:500],
+                        "link": direct_link,
+                        "source": "Indeed",
+                        "posted_date": job.get("detected_extensions", {}).get("posted_at", "Recently")
+                    })
+
+            return jobs
+        except Exception as e:
+            print(f"  Indeed Error: {str(e)}")
             return []
     
     def search_all_keywords(self) -> List[Dict]:
-        """Search all keywords"""
+        """Search all keywords across LinkedIn and Indeed"""
         all_jobs = []
-        
-        for keyword in KEYWORDS:
-            print(f"Searching for: {keyword}")
-            jobs = self.search_serpapi(keyword)
-            all_jobs.extend(jobs)
+
+        # Focus on most relevant keywords for freshers
+        fresher_keywords = [
+            "Software Engineer Fresher",
+            "Backend Developer Entry Level",
+            "C++ Developer Fresher",
+            "Node.js Developer Junior",
+            "Full Stack Developer Graduate"
+        ]
+
+        for keyword in fresher_keywords:
+            print(f"\nSearching for: {keyword}")
+
+            # Search LinkedIn
+            linkedin_jobs = self.search_linkedin_jobs(keyword)
+            all_jobs.extend(linkedin_jobs)
+            time.sleep(1)
+
+            # Search Indeed
+            indeed_jobs = self.search_indeed_jobs(keyword)
+            all_jobs.extend(indeed_jobs)
             time.sleep(RATE_LIMIT_BETWEEN_SEARCHES)
-        
-        # Remove duplicates
+
+        # Remove duplicates based on title and company
         unique_jobs = []
         seen = set()
         for job in all_jobs:
-            key = (job['title'].lower(), job['company'].lower())
-            if key not in seen:
+            key = (job['title'].lower().strip(), job['company'].lower().strip())
+            if key not in seen and job.get('link'):  # Only include jobs with valid links
                 seen.add(key)
                 unique_jobs.append(job)
-        
+
+        # Sort by source priority (LinkedIn first, then Indeed)
+        unique_jobs.sort(key=lambda x: (x['source'] != 'LinkedIn', x.get('posted_date', '')), reverse=False)
+
         return unique_jobs
 
 
@@ -115,25 +203,36 @@ class EmailNotifier:
             return f"""<html><body><h2>Daily Job Search Results</h2>
             <p>No jobs found today.</p><p><em>Date: {datetime.now().strftime("%Y-%m-%d")}</em></p>
             </body></html>"""
-        
+
         jobs_html = ""
         for i, job in enumerate(jobs, 1):
+            source_badge = f"<span style='background-color: #0077b5; color: white; padding: 3px 8px; border-radius: 3px; font-size: 11px; margin-left: 10px;'>{job.get('source', 'Job Board')}</span>"
+            posted_date = job.get('posted_date', 'Recently posted')
+
             jobs_html += f"""
-            <div style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px;">
-                <h3>{i}. {job['title']}</h3>
-                <p><strong>Company:</strong> {job['company']}</p>
-                <p><strong>Location:</strong> {job['location']}</p>
-                <p><strong>Description:</strong> {job['description'][:200]}...</p>
-                <p><a href="{job['link']}" style="background-color: #3498db; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Apply Now</a></p>
+            <div style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; background-color: #f9f9f9;">
+                <h3 style="margin: 0 0 10px 0; color: #2c3e50;">{i}. {job['title']} {source_badge}</h3>
+                <p style="margin: 5px 0;"><strong>🏢 Company:</strong> {job['company']}</p>
+                <p style="margin: 5px 0;"><strong>📍 Location:</strong> {job['location']}</p>
+                <p style="margin: 5px 0;"><strong>🕐 Posted:</strong> {posted_date}</p>
+                <p style="margin: 10px 0; color: #555;">{job['description'][:250]}...</p>
+                <p style="margin: 15px 0 0 0;">
+                    <a href="{job['link']}" target="_blank" style="background-color: #0077b5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">🔗 Apply on {job.get('source', 'Website')}</a>
+                </p>
             </div>
             """
-        
-        html = f"""<html><body style="font-family: Arial, sans-serif;">
-                <h2>🎯 Daily Job Search Results for Mayank Sharma</h2>
-                <p><strong>Date:</strong> {datetime.now().strftime("%Y-%m-%d")}</p>
-                <p><strong>Total Jobs Found:</strong> {len(jobs)}</p>
-                <hr>{jobs_html}<hr>
-                <p style="color: #7f8c8d; font-size: 12px;"><em>Automated job search for Software Engineer positions in India.</em></p>
+
+        html = f"""<html><body style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
+                <h2 style="color: #2c3e50;">🎯 Daily Job Search Results for Mayank Sharma</h2>
+                <p><strong>📅 Date:</strong> {datetime.now().strftime("%B %d, %Y")}</p>
+                <p><strong>📊 Total Active Jobs:</strong> {len(jobs)} fresher/entry-level positions</p>
+                <p style="background-color: #e8f5e9; padding: 10px; border-left: 4px solid #4caf50; margin: 15px 0;">
+                    ✅ <strong>Filtered for:</strong> Fresher, Entry-level, 0-1 year experience<br>
+                    ✅ <strong>Sources:</strong> LinkedIn, Indeed (Direct career page links)<br>
+                    ✅ <strong>Location:</strong> India only
+                </p>
+                <hr style="border: 1px solid #ddd; margin: 20px 0;">{jobs_html}<hr style="border: 1px solid #ddd; margin: 20px 0;">
+                <p style="color: #7f8c8d; font-size: 12px; text-align: center;"><em>🤖 Automated daily job search • Direct career page links • Fresher-focused filtering</em></p>
                 </body></html>"""
         return html
     
